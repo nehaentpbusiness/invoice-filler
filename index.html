@@ -66,7 +66,7 @@
         let invoiceCounter = '0001D';
         let pdfTemplate = null;
         const SHEET_URL = 'https://script.google.com/macros/s/AKfycbwSIlNxeQIiHA1MJLkpl1WHDjwGdffDVcVrvu6VZNiFMtl9CGdKpXZus01VMVKS_FE1/exec';
-        const PDF_URL = './nehaent_rc.pdf'; // PDF in same folder
+        const PDF_URL = './nehaent_rc.pdf';
 
         async function loadTemplateFromURL() {
             const statusDiv = document.getElementById('status');
@@ -287,12 +287,37 @@
 
                 const pdfBytes = await pdfDoc.save();
                 const blob = new Blob([pdfBytes], { type: 'application/pdf' });
-                const url = URL.createObjectURL(blob);
                 
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = 'Invoice_' + invoiceNum + '.pdf';
-                link.click();
+                // Use File System Access API for save dialog (if supported)
+                if ('showSaveFilePicker' in window) {
+                    try {
+                        const handle = await window.showSaveFilePicker({
+                            suggestedName: 'Invoice_' + invoiceNum + '.pdf',
+                            types: [{
+                                description: 'PDF Files',
+                                accept: { 'application/pdf': ['.pdf'] }
+                            }]
+                        });
+                        
+                        const writable = await handle.createWritable();
+                        await writable.write(blob);
+                        await writable.close();
+                    } catch (err) {
+                        if (err.name !== 'AbortError') {
+                            console.error('Save error:', err);
+                            // Fallback to regular download
+                            fallbackDownload(blob, invoiceNum);
+                        } else {
+                            // User cancelled - re-enable button and return
+                            btn.disabled = false;
+                            btn.textContent = 'Generate Invoice';
+                            return;
+                        }
+                    }
+                } else {
+                    // Fallback for browsers that don't support File System Access API
+                    fallbackDownload(blob, invoiceNum);
+                }
 
                 // Save to Google Sheets
                 await saveToGoogleSheets({
@@ -327,6 +352,15 @@
                 btn.disabled = false;
                 btn.textContent = 'Generate Invoice';
             }
+        }
+
+        function fallbackDownload(blob, invoiceNum) {
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = 'Invoice_' + invoiceNum + '.pdf';
+            link.click();
+            URL.revokeObjectURL(url);
         }
 
         // Initialize on page load
