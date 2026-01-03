@@ -65,7 +65,7 @@
     <script>
         let invoiceCounter = '0001D';
         let pdfTemplate = null;
-        const SHEET_URL = 'https://script.google.com/macros/s/AKfycbzS4uqSdhqjWV75k74wlMUr05l0oWJ-6O8HXH21_lKs34DfQHxrIWFhblf8W95blRrC/exec';
+        const SHEET_URL = 'https://script.google.com/macros/s/AKfycbzqdH03hmLM5HgbEX95rqQCrHjVbRpafOitoNU4PwerJMeO6fKSx0kJdNquElhjSMy7/exec';
         const PDF_URL = './nehaent_rc.pdf';
 
         async function loadTemplateFromURL() {
@@ -92,26 +92,40 @@
 
         async function loadCounterFromSheet() {
             try {
-                const response = await fetch(SHEET_URL + '?action=getCounter');
-                const data = await response.json();
+                // Use POST instead of GET for better mobile compatibility
+                const response = await fetch(SHEET_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'text/plain',
+                    },
+                    body: JSON.stringify({
+                        action: 'getCounter'
+                    }),
+                    redirect: 'follow'
+                });
+                
+                const text = await response.text();
+                console.log('Counter response:', text); // Debug log
+                
+                const data = JSON.parse(text);
                 
                 if (data.counter) {
                     invoiceCounter = data.counter;
                     document.getElementById('invoiceNum').value = invoiceCounter;
+                    console.log('Loaded counter:', invoiceCounter); // Debug log
                 } else {
-                    // Fallback to default
                     document.getElementById('invoiceNum').value = invoiceCounter;
                 }
             } catch (error) {
                 console.error('Error loading counter:', error);
-                // Use default value
                 document.getElementById('invoiceNum').value = invoiceCounter;
             }
         }
 
         async function saveCounterToSheet(num) {
             try {
-                await fetch(SHEET_URL, {
+                console.log('Saving counter:', num); // Debug log
+                const response = await fetch(SHEET_URL, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'text/plain',
@@ -122,8 +136,14 @@
                     }),
                     redirect: 'follow'
                 });
+                
+                const text = await response.text();
+                console.log('Counter save response:', text); // Debug log
+                
+                return true;
             } catch (error) {
                 console.error('Error saving counter:', error);
+                return false;
             }
         }
 
@@ -332,24 +352,21 @@
                     } catch (err) {
                         if (err.name !== 'AbortError') {
                             console.error('Save error:', err);
-                            // Fallback to regular download
                             fallbackDownload(blob, invoiceNum);
                         } else {
-                            // User cancelled - re-enable button and return
                             btn.disabled = false;
                             btn.textContent = 'Generate Invoice';
                             return;
                         }
                     }
                 } else {
-                    // Fallback for browsers that don't support File System Access API
                     fallbackDownload(blob, invoiceNum);
                 }
 
                 // Calculate next invoice number FIRST
                 const nextNum = incrementInvoice(invoiceNum);
 
-                // Save to Google Sheets with invoice data
+                // Save invoice data to Google Sheets
                 await saveToGoogleSheets({
                     action: 'saveInvoice',
                     timestamp: new Date().toISOString(),
@@ -379,7 +396,6 @@
                 console.error('Error:', error);
                 alert('Error generating invoice: ' + error.message);
                 
-                // Re-enable button on error
                 const btn = document.getElementById('generateBtn');
                 btn.disabled = false;
                 btn.textContent = 'Generate Invoice';
