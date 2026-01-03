@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice Filler</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
+    <script src="https://unpkg.com/@pdf-lib/fontkit@1.0.0/dist/fontkit.umd.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 600px; margin: 20px auto; padding: 20px; }
+        textarea { width: 100%; height: 150px; font-family: monospace; font-size: 16px; padding: 10px; border: 2px solid #ddd; border-radius: 5px; }
+        button { background: #007bff; color: white; padding: 15px; border: none; border-radius: 5px; cursor: pointer; font-size: 18px; width: 100%; margin-top: 10px; font-weight: bold; }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #6c757d; cursor: not-allowed; }
+        .input-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; }
+        input { width: 100%; padding: 10px; font-size: 16px; border: 2px solid #ddd; border-radius: 5px; }
+        h2 { color: #333; text-align: center; }
+        #pdfUpload { display: none; }
+        .upload-btn { background: #28a745; margin-bottom: 20px; }
+        .upload-btn:hover { background: #218838; }
+        .status { text-align: center; padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .ready { background: #d4edda; color: #155724; }
+        .waiting { background: #fff3cd; color: #856404; }
+        .error { background: #f8d7da; color: #721c24; }
+        .success { background: #d1ecf1; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <h2>Invoice Filler - Neha Enterprises</h2>
+    
+    <div id="status" class="status waiting">Please upload nehaent_rc.pdf first</div>
+    
+    <button class="upload-btn" onclick="document.getElementById('pdfUpload').click()">Upload nehaent_rc.pdf Template</button>
+    <input type="file" id="pdfUpload" accept=".pdf" onchange="loadTemplate()">
+    
+    <div id="formSection" style="opacity: 0.5; pointer-events: none;">
+        <div class="input-group">
+            <label>Invoice Number:</label>
+            <input type="text" id="invoiceNum">
+        </div>
+
+        <div class="input-group">
+            <label>Date:</label>
+            <input type="date" id="date">
+        </div>
+
+        <div class="input-group">
+            <label>Requisition No.:</label>
+            <input type="text" id="reqNo" placeholder="Optional">
+        </div>
+
+        <div class="input-group">
+            <label>To:</label>
+            <input type="text" id="toField" placeholder="Optional">
+        </div>
+
+        <div class="input-group">
+            <label>Site:</label>
+            <input type="text" id="site" placeholder="Optional">
+        </div>
+
+        <div class="input-group">
+            <label>Items (format: Item-Quantity):</label>
+            <textarea id="items" placeholder="Screw-100&#10;Bolt-1000"></textarea>
+        </div>
+
+        <button id="generateBtn" onclick="fillPDF()">Generate Invoice</button>
+    </div>
+
+    <script>
+        let invoiceCounter = '0001D';
+        let pdfTemplate = null;
+        const SHEET_URL = 'https://script.google.com/macros/s/AKfycbwSIlNxeQIiHA1MJLkpl1WHDjwGdffDVcVrvu6VZNiFMtl9CGdKpXZus01VMVKS_FE1/exec';
+
+        async function loadTemplate() {
+            const file = document.getElementById('pdfUpload').files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                pdfTemplate = e.target.result;
+                document.getElementById('status').textContent = 'Template loaded! Ready to generate invoices.';
+                document.getElementById('status').className = 'status ready';
+                document.getElementById('formSection').style.opacity = '1';
+                document.getElementById('formSection').style.pointerEvents = 'auto';
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function loadCounter() {
+            const saved = localStorage.getItem('invoice_counter');
+            if (saved) invoiceCounter = saved;
+            document.getElementById('invoiceNum').value = invoiceCounter;
+        }
+
+        function saveCounter(num) {
+            localStorage.setItem('invoice_counter', num);
+        }
+
+        function incrementInvoice(num) {
+            const match = num.match(/^(\d+)D$/);
+            if (match) {
+                return (parseInt(match[1]) + 1).toString().padStart(4, '0') + 'D';
+            }
+            return '0001D';
+        }
+
+        function parseItems(text) {
+            return text.trim().split('\n').map((line, idx) => {
+                const parts = line.split('-');
+                if (parts.length === 2) {
+                    return {
+                        sr: idx + 1,
+                        desc: parts[0].trim(),
+                        qty: parts[1].trim()
+                    };
+                }
+                return null;
+            }).filter(Boolean);
+        }
+
+        async function saveToGoogleSheets(data) {
+            const statusDiv = document.getElementById('status');
+            statusDiv.textContent = 'Saving to Google Sheets...';
+            statusDiv.className = 'status waiting';
+
+            try {
+                const response = await fetch(SHEET_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'text/plain',
+                    },
+                    body: JSON.stringify(data),
+                    redirect: 'follow'
+                });
+
+                statusDiv.textContent = 'Successfully saved to Google Sheets!';
+                statusDiv.className = 'status success';
+                
+                setTimeout(() => {
+                    statusDiv.textContent = 'Template loaded! Ready to generate invoices.';
+                    statusDiv.className = 'status ready';
+                }, 3000);
+
+                return true;
+            } catch (error) {
+                console.error('Google Sheets error:', error);
+                statusDiv.textContent = 'Warning: Could not save to Google Sheets, but PDF was generated.';
+                statusDiv.className = 'status error';
+                
+                setTimeout(() => {
+                    statusDiv.textContent = 'Template loaded! Ready to generate invoices.';
+                    statusDiv.className = 'status ready';
+                }, 3000);
+                
+                return false;
+            }
+        }
+
+        async function fillPDF() {
+            try {
+                if (!pdfTemplate) {
+                    alert('Please upload the PDF template first!');
+                    return;
+                }
+
+                const itemsText = document.getElementById('items').value;
+                const invoiceNum = document.getElementById('invoiceNum').value;
+                const dateVal = document.getElementById('date').value;
+                const reqNo = document.getElementById('reqNo').value;
+                const toField = document.getElementById('toField').value;
+                const site = document.getElementById('site').value;
+                const items = parseItems(itemsText);
+
+                if (items.length === 0) {
+                    alert('Enter items in format: Item-Quantity');
+                    return;
+                }
+
+                // Disable button while processing
+                const btn = document.getElementById('generateBtn');
+                btn.disabled = true;
+                btn.textContent = 'Generating...';
+
+                const { PDFDocument, rgb, StandardFonts } = PDFLib;
+                const pdfDoc = await PDFDocument.load(pdfTemplate);
+                
+                const handFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+
+                const pages = pdfDoc.getPages();
+                const firstPage = pages[0];
+                const { height } = firstPage.getSize();
+
+                const color = rgb(0, 0, 0.2);
+
+                // White background for invoice number
+                firstPage.drawRectangle({
+                    x: 72,
+                    y: height - 117,
+                    width: 105,
+                    height: 23,
+                    color: rgb(1, 1, 1),
+                });
+                
+                // Invoice number - placed higher
+                firstPage.drawText(invoiceNum, {
+                    x: 78,
+                    y: height - 102,
+                    size: 17,
+                    font: handFont,
+                    color: color,
+                });
+
+                // Date - moved left
+                firstPage.drawText(dateVal, {
+                    x: 450,
+                    y: height - 95,
+                    size: 11,
+                    font: handFont,
+                    color: color,
+                });
+
+                // Requisition No - moved left
+                if (reqNo) {
+                    firstPage.drawText(reqNo, {
+                        x: 432,
+                        y: height - 127,
+                        size: 11,
+                        font: handFont,
+                        color: color,
+                    });
+                }
+
+                if (toField) {
+                    firstPage.drawText(toField, {
+                        x: 67,
+                        y: height - 157,
+                        size: 11,
+                        font: handFont,
+                        color: color,
+                    });
+                }
+
+                // Site - moved left
+                if (site) {
+                    firstPage.drawText(site, {
+                        x: 247,
+                        y: height - 210,
+                        size: 11,
+                        font: handFont,
+                        color: color,
+                    });
+                }
+
+                // Items - start slightly lower
+                let startY = height - 275;
+                items.forEach((item, idx) => {
+                    const y = startY - (idx * 32);
+                    
+                    firstPage.drawText(item.sr.toString(), {
+                        x: 47,
+                        y: y,
+                        size: 12,
+                        font: handFont,
+                        color: color,
+                    });
+
+                    firstPage.drawText(item.desc, {
+                        x: 177,
+                        y: y,
+                        size: 12,
+                        font: handFont,
+                        color: color,
+                    });
+
+                    firstPage.drawText(item.qty, {
+                        x: 445,
+                        y: y,
+                        size: 12,
+                        font: handFont,
+                        color: color,
+                    });
+                });
+
+                const pdfBytes = await pdfDoc.save();
+                const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+                const url = URL.createObjectURL(blob);
+                
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = 'Invoice_' + invoiceNum + '.pdf';
+                link.click();
+
+                // Save to Google Sheets
+                await saveToGoogleSheets({
+                    timestamp: new Date().toISOString(),
+                    invoiceNum: invoiceNum,
+                    date: dateVal,
+                    reqNo: reqNo || '',
+                    to: toField || '',
+                    site: site || '',
+                    items: items.map(i => `${i.desc} (${i.qty})`).join(', ')
+                });
+
+                const nextNum = incrementInvoice(invoiceNum);
+                saveCounter(nextNum);
+                invoiceCounter = nextNum;
+                document.getElementById('invoiceNum').value = nextNum;
+                document.getElementById('items').value = '';
+                document.getElementById('reqNo').value = '';
+                document.getElementById('toField').value = '';
+                document.getElementById('site').value = '';
+                
+                // Re-enable button
+                btn.disabled = false;
+                btn.textContent = 'Generate Invoice';
+                
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Error generating invoice: ' + error.message);
+                
+                // Re-enable button on error
+                const btn = document.getElementById('generateBtn');
+                btn.disabled = false;
+                btn.textContent = 'Generate Invoice';
+            }
+        }
+
+        document.getElementById('date').value = new Date().toISOString().split('T')[0];
+        loadCounter();
+    </script>
+</body>
+</html>
