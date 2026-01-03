@@ -16,9 +16,6 @@
         label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 14px; }
         input { width: 100%; padding: 10px; font-size: 16px; border: 2px solid #ddd; border-radius: 5px; }
         h2 { color: #333; text-align: center; }
-        #pdfUpload { display: none; }
-        .upload-btn { background: #28a745; margin-bottom: 20px; }
-        .upload-btn:hover { background: #218838; }
         .status { text-align: center; padding: 10px; margin: 10px 0; border-radius: 5px; }
         .ready { background: #d4edda; color: #155724; }
         .waiting { background: #fff3cd; color: #856404; }
@@ -29,10 +26,7 @@
 <body>
     <h2>Invoice Filler - Neha Enterprises</h2>
     
-    <div id="status" class="status waiting">Please upload nehaent_rc.pdf first</div>
-    
-    <button class="upload-btn" onclick="document.getElementById('pdfUpload').click()">Upload nehaent_rc.pdf Template</button>
-    <input type="file" id="pdfUpload" accept=".pdf" onchange="loadTemplate()">
+    <div id="status" class="status waiting">Loading template...</div>
     
     <div id="formSection" style="opacity: 0.5; pointer-events: none;">
         <div class="input-group">
@@ -72,20 +66,28 @@
         let invoiceCounter = '0001D';
         let pdfTemplate = null;
         const SHEET_URL = 'https://script.google.com/macros/s/AKfycbwSIlNxeQIiHA1MJLkpl1WHDjwGdffDVcVrvu6VZNiFMtl9CGdKpXZus01VMVKS_FE1/exec';
+        const PDF_URL = './nehaent_rc.pdf'; // PDF in same folder
 
-        async function loadTemplate() {
-            const file = document.getElementById('pdfUpload').files[0];
-            if (!file) return;
-            
-            const reader = new FileReader();
-            reader.onload = async function(e) {
-                pdfTemplate = e.target.result;
-                document.getElementById('status').textContent = 'Template loaded! Ready to generate invoices.';
-                document.getElementById('status').className = 'status ready';
+        async function loadTemplateFromURL() {
+            const statusDiv = document.getElementById('status');
+            try {
+                statusDiv.textContent = 'Loading PDF template...';
+                statusDiv.className = 'status waiting';
+
+                const response = await fetch(PDF_URL);
+                if (!response.ok) throw new Error('Failed to load PDF');
+                
+                pdfTemplate = await response.arrayBuffer();
+                
+                statusDiv.textContent = 'Template loaded! Ready to generate invoices.';
+                statusDiv.className = 'status ready';
                 document.getElementById('formSection').style.opacity = '1';
                 document.getElementById('formSection').style.pointerEvents = 'auto';
-            };
-            reader.readAsArrayBuffer(file);
+            } catch (error) {
+                console.error('Error loading PDF:', error);
+                statusDiv.textContent = 'Error loading PDF template. Please refresh the page.';
+                statusDiv.className = 'status error';
+            }
         }
 
         function loadCounter() {
@@ -161,7 +163,7 @@
         async function fillPDF() {
             try {
                 if (!pdfTemplate) {
-                    alert('Please upload the PDF template first!');
+                    alert('PDF template not loaded yet!');
                     return;
                 }
 
@@ -327,8 +329,12 @@
             }
         }
 
-        document.getElementById('date').value = new Date().toISOString().split('T')[0];
-        loadCounter();
+        // Initialize on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('date').value = new Date().toISOString().split('T')[0];
+            loadCounter();
+            loadTemplateFromURL();
+        });
     </script>
 </body>
 </html>
