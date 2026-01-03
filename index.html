@@ -65,7 +65,7 @@
     <script>
         let invoiceCounter = '0001D';
         let pdfTemplate = null;
-        const SHEET_URL = 'https://script.google.com/macros/s/AKfycbzqdH03hmLM5HgbEX95rqQCrHjVbRpafOitoNU4PwerJMeO6fKSx0kJdNquElhjSMy7/exec';
+        const SHEET_URL = 'https://script.google.com/macros/s/AKfycbzO2ys_wbFM4zmJV3sQApBs1UtBd-3QNFT49bPpXoWj0u8tq-SrIDGcJyhsAQLGUk6P/exec';
         const PDF_URL = './nehaent_rc.pdf';
 
         async function loadTemplateFromURL() {
@@ -92,7 +92,6 @@
 
         async function loadCounterFromSheet() {
             try {
-                // Use POST instead of GET for better mobile compatibility
                 const response = await fetch(SHEET_URL, {
                     method: 'POST',
                     headers: {
@@ -105,45 +104,20 @@
                 });
                 
                 const text = await response.text();
-                console.log('Counter response:', text); // Debug log
+                console.log('Counter response:', text);
                 
                 const data = JSON.parse(text);
                 
                 if (data.counter) {
                     invoiceCounter = data.counter;
                     document.getElementById('invoiceNum').value = invoiceCounter;
-                    console.log('Loaded counter:', invoiceCounter); // Debug log
+                    console.log('Loaded counter:', invoiceCounter);
                 } else {
                     document.getElementById('invoiceNum').value = invoiceCounter;
                 }
             } catch (error) {
                 console.error('Error loading counter:', error);
                 document.getElementById('invoiceNum').value = invoiceCounter;
-            }
-        }
-
-        async function saveCounterToSheet(num) {
-            try {
-                console.log('Saving counter:', num); // Debug log
-                const response = await fetch(SHEET_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'text/plain',
-                    },
-                    body: JSON.stringify({
-                        action: 'updateCounter',
-                        counter: num
-                    }),
-                    redirect: 'follow'
-                });
-                
-                const text = await response.text();
-                console.log('Counter save response:', text); // Debug log
-                
-                return true;
-            } catch (error) {
-                console.error('Error saving counter:', error);
-                return false;
             }
         }
 
@@ -175,6 +149,8 @@
             statusDiv.className = 'status waiting';
 
             try {
+                console.log('Sending to sheets:', data);
+                
                 const response = await fetch(SHEET_URL, {
                     method: 'POST',
                     headers: {
@@ -183,6 +159,9 @@
                     body: JSON.stringify(data),
                     redirect: 'follow'
                 });
+
+                const text = await response.text();
+                console.log('Sheet response:', text);
 
                 statusDiv.textContent = 'Successfully saved to Google Sheets!';
                 statusDiv.className = 'status success';
@@ -226,6 +205,10 @@
                     alert('Enter items in format: Item-Quantity');
                     return;
                 }
+
+                // Calculate next invoice number FIRST
+                const nextNum = incrementInvoice(invoiceNum);
+                console.log('Current invoice:', invoiceNum, 'Next will be:', nextNum);
 
                 // Disable button while processing
                 const btn = document.getElementById('generateBtn');
@@ -363,10 +346,7 @@
                     fallbackDownload(blob, invoiceNum);
                 }
 
-                // Calculate next invoice number FIRST
-                const nextNum = incrementInvoice(invoiceNum);
-
-                // Save invoice data to Google Sheets
+                // Save invoice data AND counter update in ONE call
                 await saveToGoogleSheets({
                     action: 'saveInvoice',
                     timestamp: new Date().toISOString(),
@@ -375,11 +355,9 @@
                     reqNo: reqNo || '',
                     to: toField || '',
                     site: site || '',
-                    items: items.map(i => `${i.desc} (${i.qty})`).join(', ')
+                    items: items.map(i => `${i.desc} (${i.qty})`).join(', '),
+                    nextCounter: nextNum  // KEY FIX: Send next counter with invoice data
                 });
-
-                // Update counter in Google Sheets
-                await saveCounterToSheet(nextNum);
 
                 invoiceCounter = nextNum;
                 document.getElementById('invoiceNum').value = nextNum;
