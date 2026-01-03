@@ -65,7 +65,7 @@
     <script>
         let invoiceCounter = '0001D';
         let pdfTemplate = null;
-        const SHEET_URL = 'https://script.google.com/macros/s/AKfycbzO2ys_wbFM4zmJV3sQApBs1UtBd-3QNFT49bPpXoWj0u8tq-SrIDGcJyhsAQLGUk6P/exec';
+        const SHEET_URL = 'https://script.google.com/macros/s/AKfycbyPmFUGYJVdBfCzTW90JOVYqqsiB0ysszqr3W7E7Kfg7m-7CWGQcYZqr1-BO7mU495abA/exec';
         const PDF_URL = './nehaent_rc.pdf';
 
         async function loadTemplateFromURL() {
@@ -92,32 +92,38 @@
 
         async function loadCounterFromSheet() {
             try {
-                const response = await fetch(SHEET_URL, {
+                const response = await fetch(SHEET_URL + '?action=getCounter');
+                const data = await response.json();
+                
+                if (data.counter) {
+                    invoiceCounter = data.counter;
+                    document.getElementById('invoiceNum').value = invoiceCounter;
+                } else {
+                    // Fallback to default
+                    document.getElementById('invoiceNum').value = invoiceCounter;
+                }
+            } catch (error) {
+                console.error('Error loading counter:', error);
+                // Use default value
+                document.getElementById('invoiceNum').value = invoiceCounter;
+            }
+        }
+
+        async function saveCounterToSheet(num) {
+            try {
+                await fetch(SHEET_URL, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'text/plain',
                     },
                     body: JSON.stringify({
-                        action: 'getCounter'
+                        action: 'updateCounter',
+                        counter: num
                     }),
                     redirect: 'follow'
                 });
-                
-                const text = await response.text();
-                console.log('Counter response:', text);
-                
-                const data = JSON.parse(text);
-                
-                if (data.counter) {
-                    invoiceCounter = data.counter;
-                    document.getElementById('invoiceNum').value = invoiceCounter;
-                    console.log('Loaded counter:', invoiceCounter);
-                } else {
-                    document.getElementById('invoiceNum').value = invoiceCounter;
-                }
             } catch (error) {
-                console.error('Error loading counter:', error);
-                document.getElementById('invoiceNum').value = invoiceCounter;
+                console.error('Error saving counter:', error);
             }
         }
 
@@ -149,8 +155,6 @@
             statusDiv.className = 'status waiting';
 
             try {
-                console.log('Sending to sheets:', data);
-                
                 const response = await fetch(SHEET_URL, {
                     method: 'POST',
                     headers: {
@@ -159,9 +163,6 @@
                     body: JSON.stringify(data),
                     redirect: 'follow'
                 });
-
-                const text = await response.text();
-                console.log('Sheet response:', text);
 
                 statusDiv.textContent = 'Successfully saved to Google Sheets!';
                 statusDiv.className = 'status success';
@@ -205,10 +206,6 @@
                     alert('Enter items in format: Item-Quantity');
                     return;
                 }
-
-                // Calculate next invoice number FIRST
-                const nextNum = incrementInvoice(invoiceNum);
-                console.log('Current invoice:', invoiceNum, 'Next will be:', nextNum);
 
                 // Disable button while processing
                 const btn = document.getElementById('generateBtn');
@@ -335,18 +332,24 @@
                     } catch (err) {
                         if (err.name !== 'AbortError') {
                             console.error('Save error:', err);
+                            // Fallback to regular download
                             fallbackDownload(blob, invoiceNum);
                         } else {
+                            // User cancelled - re-enable button and return
                             btn.disabled = false;
                             btn.textContent = 'Generate Invoice';
                             return;
                         }
                     }
                 } else {
+                    // Fallback for browsers that don't support File System Access API
                     fallbackDownload(blob, invoiceNum);
                 }
 
-                // Save invoice data AND counter update in ONE call
+                // Calculate next invoice number FIRST
+                const nextNum = incrementInvoice(invoiceNum);
+
+                // Save to Google Sheets with invoice data
                 await saveToGoogleSheets({
                     action: 'saveInvoice',
                     timestamp: new Date().toISOString(),
@@ -355,9 +358,11 @@
                     reqNo: reqNo || '',
                     to: toField || '',
                     site: site || '',
-                    items: items.map(i => `${i.desc} (${i.qty})`).join(', '),
-                    nextCounter: nextNum  // KEY FIX: Send next counter with invoice data
+                    items: items.map(i => `${i.desc} (${i.qty})`).join(', ')
                 });
+
+                // Update counter in Google Sheets
+                await saveCounterToSheet(nextNum);
 
                 invoiceCounter = nextNum;
                 document.getElementById('invoiceNum').value = nextNum;
@@ -374,6 +379,7 @@
                 console.error('Error:', error);
                 alert('Error generating invoice: ' + error.message);
                 
+                // Re-enable button on error
                 const btn = document.getElementById('generateBtn');
                 btn.disabled = false;
                 btn.textContent = 'Generate Invoice';
